@@ -1,0 +1,120 @@
+# Auto-QA Web Automation System - Test Configuration
+# Uses alternative ports to avoid conflicts
+
+networks:
+  qa_net:
+    driver: bridge
+
+volumes:
+  ollama_models:
+  postgres_data_qa:
+
+# Shared DB config
+x-db-env: &db-env
+  DB_HOST: database
+  DB_NAME: qa_results
+  DB_USER: qa_user
+  DB_PASS: qa_password
+
+services:
+  # 1. LLM Server (Ollama)
+  ollama:
+    image: ollama/ollama
+    container_name: qa-ollama
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - qa_net
+    command: ["serve"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: always
+    profiles:
+      - ollama
+
+  # 2. Database
+  database:
+    image: postgres:18-alpine
+    container_name: qa-database
+    ports:
+      - "15433:5432"
+    environment:
+      POSTGRES_DB: qa_results
+      POSTGRES_USER: qa_user
+      POSTGRES_PASSWORD: qa_password
+    volumes:
+      - postgres_data_qa:/var/lib/postgresql/data
+    networks:
+      - qa_net
+    restart: always
+
+  # 3. Web UI
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: qa-web
+    ports:
+      - "3001:80"
+    environment:
+      PYTHONUNBUFFERED: 1
+      PORT: 80
+      BRAIN_API_URL: http://brain:9001
+      DOCKER_API_VERSION: "1.52"
+      <<: *db-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - qa_net
+    depends_on:
+      - brain
+      - database
+    restart: always
+
+  # 4. AI Brain with Multi-Agent System
+  brain:
+    build:
+      context: .
+      dockerfile: apps/brain/Dockerfile
+    container_name: qa-brain
+    ports:
+      - "9001:9000"
+    environment:
+      PYTHONUNBUFFERED: 1
+      PORT: 9000
+      OLLAMA_API_URL: http://ollama:11434
+      EXECUTOR_API_URL: http://executor:9002
+      LLM_MODEL: gemma3:1b
+      <<: *db-env
+    networks:
+      - qa_net
+    depends_on:
+      executor:
+        condition: service_started
+      database:
+        condition: service_started
+    restart: on-failure
+
+  # 5. Web Automation Executor
+  executor:
+    build:
+      context: .
+      dockerfile: apps/executor/Dockerfile
+    container_name: qa-executor
+    ports:
+      - "9002:9001"
+    environment:
+      PYTHONUNBUFFERED: 1
+      PORT: 9001
+      OLLAMA_API_URL: http://ollama:11434
+      LLM_MODEL: gemma3:1b
+    networks:
+      - qa_net
+    restart: always
+    shm_size: '2gb'
