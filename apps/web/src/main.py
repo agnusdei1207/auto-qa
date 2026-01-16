@@ -25,8 +25,13 @@ from libs.database.src import repository as db
 
 app = FastAPI(title="Auto-QA Dashboard", version="0.1")
 
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_templates_dir = os.path.join(_current_dir, "..", "templates")
+templates = Jinja2Templates(directory=_templates_dir)
+
+_static_dir = os.path.join(_current_dir, "..", "static")
+if os.path.exists(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 BRAIN_API_URL = os.environ.get('BRAIN_API_URL', 'http://brain:9000')
 

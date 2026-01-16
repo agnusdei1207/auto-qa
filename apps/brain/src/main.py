@@ -24,7 +24,7 @@ if _libs_path not in sys.path:
     sys.path.insert(0, _libs_path)
 
 from libs.database.src import repository as db
-from apps.brain.src.core.loop import run_brain_loop
+from apps.brain.src.loop import run_brain_loop
 from apps.brain.src.config import OLLAMA_API_URL, LLM_MODEL
 
 app = FastAPI(title="Enhanced AI QA Brain", version="2.0")

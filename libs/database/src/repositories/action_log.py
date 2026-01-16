@@ -2,7 +2,7 @@
 """
 Action Log Repository - Database operations for action logging.
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from psycopg2.extras import RealDictCursor
 from .base import get_db_connection

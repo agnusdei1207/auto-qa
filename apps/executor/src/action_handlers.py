@@ -22,9 +22,10 @@ logger = logging.getLogger(__name__)
 class ActionHandlers:
     """Handles browser action execution"""
 
-    def __init__(self, browser_manager, screenshots_dir):
+    def __init__(self, browser_manager, screenshots_dir, minio_client=None):
         self.browser_manager = browser_manager
         self.screenshots_dir = screenshots_dir
+        self.minio_client = minio_client
 
     async def navigate(self, request: NavigateRequest):
         """Navigate to URL"""
@@ -191,12 +192,27 @@ class ActionHandlers:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def screenshot(self, request: ScreenshotRequest):
-        """Take screenshot and save to file"""
+        """Take screenshot and save to MinIO or file"""
         try:
             ctx = await self.browser_manager.get_context(request.session_id)
             timestamp = int(datetime.now().timestamp())
-            screenshot_path = self.screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png"
-            await ctx["page"].screenshot(path=str(screenshot_path), full_page=request.full_page)
+            screenshot_bytes = await ctx["page"].screenshot(full_page=request.full_page)
+
+            if self.minio_client:
+                screenshot_url = self.minio_client.upload_screenshot(
+                    request.session_id,
+                    screenshot_bytes,
+                    request.full_page
+                )
+                screenshot_path = screenshot_url or str(self.screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png")
+                if screenshot_url and screenshot_url.startswith("http"):
+                    with open(self.screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png", 'wb') as f:
+                        f.write(screenshot_bytes)
+            else:
+                screenshot_path = self.screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png"
+                with open(screenshot_path, 'wb') as f:
+                    f.write(screenshot_bytes)
+                screenshot_url = None
 
             session_file = self.screenshots_dir / f"{request.session_id}_progress.json"
             progress = {}
@@ -208,14 +224,15 @@ class ActionHandlers:
             progress["screenshots"].append({
                 "timestamp": timestamp,
                 "path": str(screenshot_path),
-                "url": ctx["page"].url
+                "url": screenshot_url or str(screenshot_path),
+                "page_url": ctx["page"].url
             })
 
             with open(session_file, 'w') as f:
                 json.dump(progress, f, indent=2, default=str)
 
             logger.info(f"Screenshot saved: {screenshot_path}")
-            return {"success": True, "screenshot_path": str(screenshot_path), "timestamp": timestamp}
+            return {"success": True, "screenshot_path": str(screenshot_path), "timestamp": timestamp, "url": screenshot_url}
         except Exception as e:
             logger.error(f"Screenshot error: {e}")
             raise HTTPException(status_code=500, detail=str(e))

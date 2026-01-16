@@ -3,6 +3,7 @@ Interaction Agent - UI Interactions
 """
 import json
 import logging
+from typing import Dict
 from .base_agent import BaseAgent
 from apps.brain.src.config import EXECUTOR_API_URL
 import requests

@@ -97,6 +97,9 @@ def init_database(max_retries: int = 30, retry_delay: int = 5) -> bool:
                     notes TEXT
                 );
             """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at DESC);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_status_started ON sessions(status, started_at DESC);")
             
             # Test Cases Table
             cur.execute("""
@@ -111,6 +114,8 @@ def init_database(max_retries: int = 30, retry_delay: int = 5) -> bool:
                 );
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_test_cases_session ON test_cases(session_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_test_cases_status ON test_cases(status);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_test_cases_session_status ON test_cases(session_id, status);")
             
             # Actions Table
             cur.execute("""
@@ -131,6 +136,8 @@ def init_database(max_retries: int = 30, retry_delay: int = 5) -> bool:
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_test_case ON actions(test_case_id);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_test_case_status ON actions(test_case_id, status);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_created_at ON actions(created_at DESC);")
             
             # Test Logs Table
             cur.execute("""

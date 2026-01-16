@@ -3,6 +3,7 @@ Report Agent - Test Report Generation
 """
 import json
 import logging
+from typing import Dict
 from .base_agent import BaseAgent
 from libs.database.src import repository as db
 

@@ -5,11 +5,12 @@ Simplified main module using separated components:
 - browser_manager.py: Browser state management
 - action_handlers.py: Action execution logic
 - requests.py: Request/response models
+- minio_client.py: MinIO object storage client
 """
 import json
 import logging
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from apps.executor.src.browser_manager import BrowserManager
 from apps.executor.src.action_handlers import ActionHandlers
 from apps.executor.src.requests import (
@@ -33,11 +34,25 @@ screenshots_dir = Path("/tmp/screenshots")
 screenshots_dir.mkdir(parents=True, exist_ok=True)
 
 browser_manager = BrowserManager(screenshots_dir)
-action_handlers = ActionHandlers(browser_manager, screenshots_dir)
+
+minio_client = None
+try:
+    from apps.executor.src.minio_client import MinioClient
+    minio_client = MinioClient()
+    logger.info("MinIO client initialized successfully")
+except Exception as e:
+    logger.warning(f"MinIO client not available: {e}")
+
+action_handlers = ActionHandlers(browser_manager, screenshots_dir, minio_client)
 
 
 @app.on_event("startup")
 async def startup():
+    if minio_client:
+        if minio_client.health_check():
+            logger.info("MinIO connection healthy")
+        else:
+            logger.warning("MinIO connection failed, using fallback filesystem storage")
     logger.info("🎭 Playwright Executor v2.0 started")
 
 
@@ -49,7 +64,8 @@ async def shutdown():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "Executor", "version": "2.0"}
+    minio_status = "connected" if minio_client and minio_client.health_check() else "disconnected"
+    return {"status": "healthy", "service": "Executor", "version": "2.0", "minio": minio_status}
 
 
 # Browser Actions

@@ -51,7 +51,7 @@ RUN apt update && apt install -y --no-install-recommends \
     libxi6 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/requirements.txt
+COPY apps/executor/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY libs /app/libs

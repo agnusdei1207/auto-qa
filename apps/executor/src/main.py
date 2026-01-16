@@ -33,6 +33,15 @@ screenshots_dir.mkdir(parents=True, exist_ok=True)
 # Session configuration
 session_configs = {}
 
+# MinIO client
+minio_client = None
+try:
+    from apps.executor.src.minio_client import MinioClient
+    minio_client = MinioClient()
+    logger.info("MinIO client initialized successfully")
+except Exception as e:
+    logger.warning(f"MinIO client not available: {e}")
+
 
 class NavigateRequest(BaseModel):
     url: str
@@ -97,6 +106,11 @@ class ProgressUpdateRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup():
+    if minio_client:
+        if minio_client.health_check():
+            logger.info("MinIO connection healthy")
+        else:
+            logger.warning("MinIO connection failed, using fallback filesystem storage")
     logger.info("🎭 Playwright Executor started")
 
 
@@ -109,7 +123,8 @@ async def shutdown():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "Executor"}
+    minio_status = "connected" if minio_client and minio_client.health_check() else "disconnected"
+    return {"status": "healthy", "service": "Executor", "minio": minio_status}
 
 
 async def get_context(session_id: str, headful: bool = False):
@@ -328,8 +343,23 @@ async def screenshot(request: ScreenshotRequest):
     try:
         ctx = await get_context(request.session_id)
         timestamp = int(datetime.now().timestamp())
-        screenshot_path = screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png"
-        await ctx["page"].screenshot(path=str(screenshot_path), full_page=request.full_page)
+        screenshot_bytes = await ctx["page"].screenshot(full_page=request.full_page)
+
+        if minio_client:
+            screenshot_url = minio_client.upload_screenshot(
+                request.session_id,
+                screenshot_bytes,
+                request.full_page
+            )
+            screenshot_path = screenshot_url or str(screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png")
+            if screenshot_url and screenshot_url.startswith("http"):
+                with open(screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png", 'wb') as f:
+                    f.write(screenshot_bytes)
+        else:
+            screenshot_path = screenshots_dir / f"screenshot_{request.session_id}_{timestamp}.png"
+            with open(screenshot_path, 'wb') as f:
+                f.write(screenshot_bytes)
+            screenshot_url = None
 
         session_file = screenshots_dir / f"{request.session_id}_progress.json"
         progress = {}
@@ -341,14 +371,15 @@ async def screenshot(request: ScreenshotRequest):
         progress["screenshots"].append({
             "timestamp": timestamp,
             "path": str(screenshot_path),
-            "url": ctx["page"].url
+            "url": screenshot_url or str(screenshot_path),
+            "page_url": ctx["page"].url
         })
 
         with open(session_file, 'w') as f:
             json.dump(progress, f, indent=2, default=str)
 
         logger.info(f"Screenshot saved: {screenshot_path}")
-        return {"success": True, "screenshot_path": str(screenshot_path), "timestamp": timestamp}
+        return {"success": True, "screenshot_path": str(screenshot_path), "timestamp": timestamp, "url": screenshot_url}
     except Exception as e:
         logger.error(f"Screenshot error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
